@@ -1,7 +1,7 @@
 # stdlib
 from os import listdir
 from os.path import isfile, join
-from itertools import permutations
+from itertools import combinations
 # 3p
 import numpy as np
 import scipy.io as sio
@@ -15,8 +15,8 @@ class FAUSTDataset(Dataset):
     def __init__(self, root, dim_basis=120):
         self.root = root
         self.dim_basis = dim_basis
-        self.samples = [join(root, f) for f in listdir(root) if isfile(join(root, f))]
-        self.combinations = list(permutations(range(len(self.samples)), 2))
+        self.samples = [self.loader(join(root, f)) for f in listdir(root) if isfile(join(root, f))]
+        self.combinations = list(combinations(range(len(self.samples)), 2))
 
     def loader(self, path):
         """
@@ -35,9 +35,8 @@ class FAUSTDataset(Dataset):
 
     def __getitem__(self, index):
         idx1, idx2 = self.combinations[index]
-        path1, path2 = self.samples[idx1], self.samples[idx2]
-        feat_x, evecs_x, evals_x = self.loader(path1)
-        feat_y, evecs_y, evals_y = self.loader(path2)
+        feat_x, evecs_x, evals_x = self.samples[idx1]
+        feat_y, evecs_y, evals_y = self.samples[idx2]
 
         return [feat_x, evecs_x, evals_x, feat_y, evecs_y, evals_y]
 
