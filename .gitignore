@@ -129,6 +129,6 @@ dmypy.json
 .pyre/
 
 # ignore folder
-data/*
+data/faust/processed/*
 gdown.cookie.temp
 test.py
