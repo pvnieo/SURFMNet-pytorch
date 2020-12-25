@@ -2,11 +2,11 @@
 import argparse
 import os
 # 3p
-import numpy as np
 import torch
+from torchvision import transforms
 # project
 from model import SURFMNet
-from faust_dataset import FAUSTDataset
+from faust_dataset import FAUSTDataset, RandomSampling
 from loss import SURFMNetLoss
 
 
@@ -23,8 +23,9 @@ def train_surfmnet(args):
 
     # create dataset
     print("creating dataset")
-    dataset = FAUSTDataset(args.dataroot, args.dim_basis)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=args.n_cpu)
+    composed = transforms.Compose([RandomSampling(args.n_vertices)])
+    dataset = FAUSTDataset(args.dataroot, args.dim_basis, transform=composed)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.n_cpu)
     # create model
     print("creating model")
     surfmnet = SURFMNet(n_residual_blocks=args.num_blocks, in_dim=352).to(device)
@@ -37,23 +38,15 @@ def train_surfmnet(args):
     for epoch in range(1, args.n_epochs + 1):
         surfmnet.train()
         for i, data in enumerate(dataloader):
+            data = [x.to(device) for x in data]
             feat_x, evals_x, evecs_x, evecs_trans_x, feat_y, evals_y, evecs_y, evecs_trans_y = data
-
-            # sample vertices
-            n_vert = min(feat_x.size(1), feat_y.size(1))
-            vertices = np.random.choice(n_vert, args.n_vertices)
-            feat_x, feat_y = feat_x[:, vertices, :].to(device), feat_y[:, vertices, :].to(device)
-            evecs_x, evecs_y = evecs_x[:, vertices, :].to(device), evecs_y[:, vertices, :].to(device)
-            evecs_trans_x, evecs_trans_y = evecs_trans_x[:, :, vertices].to(device), evecs_trans_y[:, :, vertices].to(device)
-            evals_x, evals_y = evals_x.to(device), evals_y.to(device)
 
             # do iteration
             C1, C2, feat_1, feat_2 = surfmnet(feat_x, feat_y, evecs_trans_x, evecs_trans_y)
             loss = criterion(C1, C2, feat_1, feat_2, evecs_x, evecs_y, evecs_trans_x, evecs_trans_y, evals_x, evals_y, device)
             loss.backward()
-            if (i + 1) % args.batch_size == 0:
-                optimizer.step()
-                optimizer.zero_grad()
+            optimizer.step()
+            optimizer.zero_grad()
 
             # log
             iterations += 1
@@ -79,10 +72,10 @@ if __name__ == "__main__":
                         help='number of eigenvectors used for representation.')
     parser.add_argument("-nv", "--n-vertices", type=int, default=1500, help="Number of vertices used per shape")
     parser.add_argument("-nb", "--num-blocks", type=int, default=7, help="number of resnet blocks")
-    parser.add_argument("--wb", type=float, default=1e3, help="Bijectivity penalty weight")
-    parser.add_argument("--wo", type=float, default=1e3, help="Orthogonality penalty weight")
-    parser.add_argument("--wl", type=float, default=1., help="Laplacian commutativity penalty weight")
-    parser.add_argument("--wd", type=float, default=1e5, help="Descriptor preservation via commutativity penalty weight")
+    parser.add_argument("--wb", type=float, default=1, help="Bijectivity penalty weight")
+    parser.add_argument("--wo", type=float, default=1, help="Orthogonality penalty weight")
+    parser.add_argument("--wl", type=float, default=1e-4, help="Laplacian commutativity penalty weight")
+    parser.add_argument("--wd", type=float, default=1e3, help="Descriptor preservation via commutativity penalty weight")
     parser.add_argument("--sub-wd", type=float, default=0.2,
                         help="Percentage of subsampled vertices used to compute descriptor preservation commutativity penalty")
 

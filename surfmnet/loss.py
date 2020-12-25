@@ -48,7 +48,7 @@ class SURFMNetLoss(nn.Module):
         Returns:
             float -- total loss
         """
-        criterion = nn.MSELoss(reduction="mean")
+        criterion = FrobeniusLoss()
         eye = torch.eye(C1.size(1), C1.size(2)).unsqueeze(0)
         eye_batch = torch.repeat_interleave(eye, repeats=C1.size(0), dim=0).to(device)
 
@@ -85,3 +85,12 @@ class SURFMNetLoss(nn.Module):
         preservation_penalty *= self.w_pre
 
         return bijectivity_penalty + orthogonality_penalty + laplacian_penalty + preservation_penalty
+
+
+class FrobeniusLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, a, b):
+        loss = torch.sum((a - b) ** 2, axis=(1, 2))
+        return torch.mean(loss)

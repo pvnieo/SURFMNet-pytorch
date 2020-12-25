@@ -3,6 +3,7 @@ from os import listdir
 from os.path import isfile, join
 from itertools import permutations
 # 3p
+import numpy as np
 import scipy.io as sio
 import torch
 from torch.utils.data import Dataset
@@ -38,7 +39,25 @@ class FAUSTDataset(Dataset):
     def __getitem__(self, index):
         idx1, idx2 = self.combinations[index]
         path1, path2 = self.samples[idx1], self.samples[idx2]
-        feat_x, evals_x, evecs_x, evecs_trans_x = self.loader(path1)
-        feat_y, evals_y, evecs_y, evecs_trans_y = self.loader(path2)
+        if self.transform is not None:
+            feat_x, evals_x, evecs_x, evecs_trans_x = self.transform(self.loader(path1))
+            feat_y, evals_y, evecs_y, evecs_trans_y = self.transform(self.loader(path2))
+        else:
+            feat_x, evals_x, evecs_x, evecs_trans_x = self.loader(path1)
+            feat_y, evals_y, evecs_y, evecs_trans_y = self.loader(path2)
 
         return [feat_x, evals_x, evecs_x, evecs_trans_x, feat_y, evals_y, evecs_y, evecs_trans_y]
+
+
+class RandomSampling(object):
+    def __init__(self, num_vertices):
+        self.num_vertices = num_vertices
+
+    def __call__(self, sample):
+        feat_x, evals_x, evecs_x, evecs_trans_x = sample
+        vertices = np.random.choice(feat_x.size(0), self.num_vertices)
+        feat_x = feat_x[vertices, :]
+        evecs_x = evecs_x[vertices, :]
+        evecs_trans_x = evecs_trans_x[:, vertices]
+
+        return feat_x, evals_x, evecs_x, evecs_trans_x
