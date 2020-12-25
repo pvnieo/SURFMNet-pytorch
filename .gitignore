@@ -131,3 +131,4 @@ dmypy.json
 # ignore folder
 data/*
 gdown.cookie.temp
+test.py

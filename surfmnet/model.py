@@ -57,14 +57,16 @@ class FunctionalMapNet(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, feat_x, feat_y, evecs_x, evecs_y):
+    def forward(self, feat_x, feat_y, evecs_trans_x, evecs_trans_y):
         """One pass in functional map net.
 
         Arguments:
             feat_x {Torch.Tensor} -- learned feature 1. Shape: batch-size x num-vertices x num-features
             feat_y {Torch.Tensor} -- learned feature 2. Shape: batch-size x num-vertices x num-features
-            evecs_x {Torch.Tensor} -- eigen vectors decomposition of shape 1. Shape: batch-size x num-vertices x num-eigenvectors
-            evecs_y {Torch.Tensor} -- eigen vectors decomposition of shape 2. Shape: batch-size x num-vertices x num-eigenvectors
+            evecs_trans_x: {Torch.Tensor} -- inverse eigen vectors decomposition of shape 1. defined as evecs_x.t() @ mass_matrix.
+                                             Shape: batch-size x num-eigenvectors x num-vertices
+            evecs_trans_y: {Torch.Tensor} -- inverse eigen vectors decomposition of shape 2. defined as evecs_y.t() @ mass_matrix.
+                                             Shape: batch-size x num-eigenvectors x num-vertices
 
         Returns:
             Torch.Tensor -- matrix representation of functional correspondence.
@@ -73,8 +75,8 @@ class FunctionalMapNet(nn.Module):
                             Shape: batch_size x num-eigenvectors x num-eigenvectors.
         """
         # compute linear operator matrix representation C1 and C2
-        F_hat = torch.bmm(evecs_x.transpose(1, 2), feat_x)
-        G_hat = torch.bmm(evecs_y.transpose(1, 2), feat_y)
+        F_hat = torch.bmm(evecs_trans_x, feat_x)
+        G_hat = torch.bmm(evecs_trans_y, feat_y)
         F_hat, G_hat = F_hat.transpose(1, 2), G_hat.transpose(1, 2)
 
         Cs_1 = []
@@ -106,32 +108,26 @@ class SURFMNet(nn.Module):
         self.refine_net = RefineNet(n_residual_blocks, in_dim)
         self.funcmap_net = FunctionalMapNet()
 
-    def forward(self, feat_x, feat_y, evecs_x, evecs_y):
+    def forward(self, feat_x, feat_y, evecs_trans_x, evecs_trans_y):
         """One pass in FMNet.
 
         Arguments:
             feat_x {Torch.Tensor} -- hand crafted feature 1. Shape: batch-size x num-vertices x num-features
             feat_y {Torch.Tensor} -- hand crafted feature 2. Shape: batch-size x num-vertices x num-features
-            evecs_x {Torch.Tensor} -- eigen vectors decomposition of shape 1. Shape: batch-size x num-vertices x num-eigenvectors
-            evecs_y {Torch.Tensor} -- eigen vectors decomposition of shape 2. Shape: batch-size x num-vertices x num-eigenvectors
+            evecs_trans_x: {Torch.Tensor} -- inverse eigen vectors decomposition of shape 1. defined as evecs_x.t() @ mass_matrix.
+                                             Shape: batch-size x num-eigenvectors x num-vertices
+            evecs_trans_y: {Torch.Tensor} -- inverse eigen vectors decomposition of shape 2. defined as evecs_y.t() @ mass_matrix.
+                                             Shape: batch-size x num-eigenvectors x num-vertices
 
         Returns:
-            Torch.Tensor -- soft correspondence matrix. Shape: batch_size x num_vertices x num_vertices.
-            Torch.Tensor -- matrix representation of functional correspondence.
+            Torch.Tensor -- matrix representation of functional correspondence from shape 1 to shape 2.
                             Shape: batch_size x num-eigenvectors x num-eigenvectors.
+            Torch.Tensor -- matrix representation of functional correspondence from shape 2 to shape 1.
+                            Shape: batch_size x num-eigenvectors x num-eigenvectors.
+            Torch.Tensor -- Refined features of shape 1. Shape: batch_size x 352.
+            Torch.Tensor -- Refined features of shape 1. Shape: batch_size x 352.
         """
         feat_x = self.refine_net(feat_x)
         feat_y = self.refine_net(feat_y)
-        C1, C2 = self.funcmap_net(feat_x, feat_y, evecs_x, evecs_y)
+        C1, C2 = self.funcmap_net(feat_x, feat_y, evecs_trans_x, evecs_trans_y)
         return C1, C2, feat_x, feat_y
-
-
-if __name__ == "__main__":
-    bs, n_points, n_feat, n_basis, n_basis2 = 10, 1000, 352, 100, 120
-    feat_x = torch.rand(bs, n_points, n_feat)
-    feat_y = torch.rand(bs, n_points, n_feat)
-    evecs_x = torch.rand(bs, n_points, n_basis)
-    evecs_y = torch.rand(bs, n_points, n_basis2)
-    surfmnet = SURFMNet()
-    C1, C2, feat_1, feat_2 = surfmnet(feat_x, feat_y, evecs_x, evecs_y)
-    print(C1.size(), C2.size())

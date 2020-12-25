@@ -1,44 +1,7 @@
-# stdlib
-from os import listdir
-from os.path import isfile, join
-from itertools import combinations
 # 3p
 import numpy as np
-import scipy.io as sio
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset
-
-
-class FAUSTDataset(Dataset):
-    """FAUST dataset"""
-    def __init__(self, root, dim_basis=120):
-        self.root = root
-        self.dim_basis = dim_basis
-        self.samples = [self.loader(join(root, f)) for f in listdir(root) if isfile(join(root, f))]
-        self.combinations = list(combinations(range(len(self.samples)), 2))
-
-    def loader(self, path):
-        """
-        load dict stored at path. Dict has keys:size:
-            target_evals: 500 * 1
-            target_evecs: num_vertices * 500
-            target_shot: num_vertices * 352
-        """
-        mat = sio.loadmat(path)
-        return (torch.Tensor(mat['target_shot']).float(),
-                torch.Tensor(mat['target_evecs'])[:, :self.dim_basis].float(),
-                torch.Tensor(mat['target_evals']).flatten()[:self.dim_basis].float())
-
-    def __len__(self):
-        return len(self.combinations)
-
-    def __getitem__(self, index):
-        idx1, idx2 = self.combinations[index]
-        feat_x, evecs_x, evals_x = self.samples[idx1]
-        feat_y, evecs_y, evals_y = self.samples[idx2]
-
-        return [feat_x, evecs_x, evals_x, feat_y, evecs_y, evals_y]
 
 
 class SURFMNetLoss(nn.Module):
@@ -63,7 +26,7 @@ class SURFMNetLoss(nn.Module):
         self.w_pre = w_pre
         self.sub_pre = sub_pre
 
-    def forward(self, C1, C2, feat_1, feat_2, evecs_1, evecs_2, evals_1, evals_2, device):
+    def forward(self, C1, C2, feat_1, feat_2, evecs_1, evecs_2, evecs_trans_1, evecs_trans_2, evals_1, evals_2, device):
         """Compute soft error loss
 
         Arguments:
@@ -75,6 +38,10 @@ class SURFMNetLoss(nn.Module):
             feat_2 {Torch.Tensor} -- learned feature 2. Shape: batch-size x num-vertices x num-features
             evecs_1 {Torch.Tensor} -- eigen vectors decomposition of shape 1. Shape: batch-size x num-vertices x num-eigenvectors
             evecs_2 {Torch.Tensor} -- eigen vectors decomposition of shape 2. Shape: batch-size x num-vertices x num-eigenvectors
+            evecs_trans_1: {Torch.Tensor} -- inverse eigen vectors decomposition of shape 1. defined as evecs_x.t() @ mass_matrix.
+                                             Shape: batch-size x num-eigenvectors x num-vertices
+            evecs_trans_2: {Torch.Tensor} -- inverse eigen vectors decomposition of shape 2. defined as evecs_y.t() @ mass_matrix.
+                                             Shape: batch-size x num-eigenvectors x num-vertices
             evals_1 {Torch.Tensor} -- eigen values of shape 1. Shape: batch-size x num-eigenvectors
             evals_2 {Torch.Tensor} -- eigen values of shape 2. Shape: batch-size x num-eigenvectors
             device {Torch.device} -- device used (cpu or gpu)
@@ -107,9 +74,9 @@ class SURFMNetLoss(nn.Module):
         feat_1 = feat_1[:, :, descs].transpose(1, 2).unsqueeze(2)
         feat_2 = feat_2[:, :, descs].transpose(1, 2).unsqueeze(2)
         M_1 = torch.einsum('abcd,ade->abcde', feat_1, evecs_1)
-        M_1 = torch.einsum('afd,abcde->abcfe', evecs_1.transpose(1, 2), M_1)
+        M_1 = torch.einsum('afd,abcde->abcfe', evecs_trans_1, M_1)
         M_2 = torch.einsum('abcd,ade->abcde', feat_2, evecs_2)
-        M_2 = torch.einsum('afd,abcde->abcfe', evecs_2.transpose(1, 2), M_2)
+        M_2 = torch.einsum('afd,abcde->abcfe', evecs_trans_2, M_2)
         C1_expand = torch.repeat_interleave(C1.unsqueeze(1).unsqueeze(1), repeats=num_desc, dim=1)
         C2_expand = torch.repeat_interleave(C2.unsqueeze(1).unsqueeze(1), repeats=num_desc, dim=1)
         source1, target1 = torch.einsum('abcde,abcef->abcdf', C1_expand, M_1), torch.einsum('abcef,abcfd->abced', M_2, C1_expand)
@@ -118,18 +85,3 @@ class SURFMNetLoss(nn.Module):
         preservation_penalty *= self.w_pre
 
         return bijectivity_penalty + orthogonality_penalty + laplacian_penalty + preservation_penalty
-
-
-if __name__ == "__main__":
-    dataroot = "./data/Faust_original/MAT"
-    dataset = FAUSTDataset(dataroot)
-    print(len(dataset))
-    print(len(dataset[0]), dataset[0][1].size())
-
-    bs, n_points, n_feat, n_basis = 10, 1000, 352, 100
-    C1, C2 = torch.rand(bs, n_basis, n_basis), torch.rand(bs, n_basis, n_basis)
-    evals_1, evals_2 = torch.rand(bs, n_basis), torch.rand(bs, n_basis)
-    feat_1, feat_2 = torch.rand(bs, n_points, n_feat), torch.rand(bs, n_points, n_feat)
-    evecs_1, evecs_2 = torch.rand(bs, n_points, n_basis), torch.rand(bs, n_points, n_basis)
-    criterion = SURFMNetLoss(1e3, 1e3, 1, 1e5, 0.2)
-    print(criterion(C1, C2, feat_1, feat_2, evecs_1, evecs_2, evals_1, evals_2))
