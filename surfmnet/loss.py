@@ -57,8 +57,8 @@ class SURFMNetLoss(nn.Module):
         bijectivity_penalty *= self.w_bij
 
         # Orthogonality penalty
-        orthogonality_penalty = criterion(torch.bmm(C1.transpose(1, 2), C2), eye_batch)
-        orthogonality_penalty += criterion(torch.bmm(C2.transpose(1, 2), C1), eye_batch)
+        orthogonality_penalty = criterion(torch.bmm(C1.transpose(1, 2), C1), eye_batch)
+        orthogonality_penalty += criterion(torch.bmm(C2.transpose(1, 2), C2), eye_batch)
         orthogonality_penalty *= self.w_orth
 
         # Laplacian commutativity penalty
